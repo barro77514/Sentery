@@ -4,3 +4,5 @@ node_modules
 orchestrator.log
 core.log
 ui.log
+__pycache__/
+*.pyc
