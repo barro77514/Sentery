@@ -1,0 +1,6 @@
+*.log
+node_modules
+.next
+orchestrator.log
+core.log
+ui.log
