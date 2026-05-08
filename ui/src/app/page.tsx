@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 
 interface TrafficEntry {
   id: string;
@@ -33,39 +33,40 @@ export default function Dashboard() {
   const [traffic, setTraffic] = useState<TrafficEntry[]>([]);
   const [attacks, setAttacks] = useState<AttackSuggestion[]>([]);
   const [alerts, setAlerts] = useState<VAAlert[]>([]);
+  const [aiLogs, setAiLogs] = useState<string[]>([]);
+  const [explorerUrl, setExplorerUrl] = useState('');
 
+  const aiLogsEndRef = useRef<HTMLDivElement>(null);
   const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
-  const fetchTraffic = async () => {
+  const fetchData = async () => {
     try {
-      const res = await fetch(`${API_URL}/traffic`);
-      if (!res.ok) throw new Error('Network response was not ok');
-      const data = await res.json();
-      setTraffic(data);
+      const [t, a, v, l] = await Promise.all([
+        fetch(`${API_URL}/traffic`).then(r => r.json()),
+        fetch(`${API_URL}/attacks`).then(r => r.json()),
+        fetch(`${API_URL}/va/alerts`).then(r => r.json()),
+        fetch(`${API_URL}/ai-logs`).then(r => r.json())
+      ]);
+      setTraffic(t);
+      setAttacks(a);
+      setAlerts(v);
+      setAiLogs(l);
     } catch (err) {
-      console.error("Failed to fetch traffic", err);
+      console.error("Failed to fetch data", err);
     }
   };
 
-  const fetchAttacks = async () => {
+  const launchExplorer = async () => {
+    if (!explorerUrl) return;
     try {
-      const res = await fetch(`${API_URL}/attacks`);
-      if (!res.ok) throw new Error('Network response was not ok');
-      const data = await res.json();
-      setAttacks(data);
+      await fetch(`${API_URL}/explorer/launch`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: explorerUrl })
+      });
+      alert("Autonomous Explorer launched!");
     } catch (err) {
-      console.error("Failed to fetch attacks", err);
-    }
-  };
-
-  const fetchVAAlerts = async () => {
-    try {
-      const res = await fetch(`${API_URL}/va/alerts`);
-      if (!res.ok) throw new Error('Network response was not ok');
-      const data = await res.json();
-      setAlerts(data);
-    } catch (err) {
-      console.error("Failed to fetch VA alerts", err);
+      console.error("Failed to launch explorer", err);
     }
   };
 
@@ -73,7 +74,7 @@ export default function Dashboard() {
     try {
       const res = await fetch(`${API_URL}/attacks/${id}/approve`, { method: 'POST' });
       if (res.ok) {
-        fetchAttacks();
+        fetchData();
         alert("Attack approved and executed (Knowledge Base updated)!");
       }
     } catch (err) {
@@ -82,24 +83,20 @@ export default function Dashboard() {
   };
 
   useEffect(() => {
-    fetchTraffic();
-    fetchAttacks();
-    fetchVAAlerts();
-    const interval = setInterval(() => {
-      fetchTraffic();
-      fetchAttacks();
-      fetchVAAlerts();
-    }, 5000);
+    fetchData();
+    const interval = setInterval(fetchData, 3000);
     return () => clearInterval(interval);
   }, []);
 
-  // Simple logic to determine user flow nodes for Timeline View
+  useEffect(() => {
+    aiLogsEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [aiLogs]);
+
   const getFlowNodes = () => {
     const nodes: { label: string, url: string, type: 'normal' | 'sensitive' | 'bypass' }[] = [];
     traffic.forEach(t => {
       let label = "Page View";
       let type: 'normal' | 'sensitive' | 'bypass' = 'normal';
-
       const url = t.url.toLowerCase();
       if (url.includes("cart")) {
         label = "Cart";
@@ -110,9 +107,6 @@ export default function Dashboard() {
       } else if (url.includes("purchase") || url.includes("success")) {
         label = "Purchase Success";
         type = 'sensitive';
-
-        // Check for bypass: if we see purchase/success but didn't see checkout recently
-        // Refined bypass check: exclude itself from the search
         const hasCheckout = traffic.some(prev =>
             prev.id !== t.id &&
             prev.url.includes("checkout") &&
@@ -124,7 +118,6 @@ export default function Dashboard() {
           type = 'bypass';
         }
       }
-
       nodes.push({ label, url: t.url, type });
     });
     return nodes;
@@ -134,12 +127,44 @@ export default function Dashboard() {
 
   return (
     <div className="min-h-screen bg-gray-50 p-8 font-sans">
-      <header className="mb-12">
-        <h1 className="text-4xl font-extrabold text-gray-900 tracking-tight flex items-center">
-          Sentery <span className="ml-4 text-sm font-normal bg-black text-white px-2 py-1 rounded">v0.2 - Semantic Memory</span>
+      <header className="mb-10">
+        <h1 className="text-4xl font-black text-gray-900 tracking-tighter flex items-center">
+          Sentery <span className="ml-4 text-xs font-mono bg-green-500 text-black px-2 py-1 rounded">v1.0 AUTONOMOUS</span>
         </h1>
-        <p className="text-gray-600 mt-2 italic font-serif">Autonomous Business Logic Intelligence</p>
+        <p className="text-gray-500 mt-1 font-medium italic">FoxyProxy Integrated | AI-Driven Navigation | Feedback Loop</p>
       </header>
+
+      {/* Control Center */}
+      <section className="mb-12 bg-white rounded-2xl shadow-xl p-6 border-b-8 border-green-500">
+        <h2 className="text-lg font-bold mb-4 flex items-center">🚀 Launch Autonomous Explorer</h2>
+        <div className="flex space-x-4">
+          <input
+            type="text"
+            placeholder="https://target-ecommerce.com"
+            className="flex-1 p-3 border-2 border-gray-100 rounded-lg text-sm font-mono focus:border-green-400 outline-none transition-all"
+            value={explorerUrl}
+            onChange={(e) => setExplorerUrl(e.target.value)}
+          />
+          <button
+            onClick={launchExplorer}
+            className="bg-black text-white font-bold px-8 py-3 rounded-lg hover:bg-gray-800 transition-all active:scale-95 uppercase text-xs tracking-widest"
+          >
+            Start Active Scanning
+          </button>
+        </div>
+      </section>
+
+      {/* AI Reasoning Terminal */}
+      <section className="mb-12 bg-black rounded-2xl shadow-2xl p-6 overflow-hidden border-t-4 border-green-400">
+        <h2 className="text-xs font-black text-green-400 uppercase tracking-[0.2em] mb-4">AI Reasoning & Analysis Logs</h2>
+        <div className="h-48 overflow-y-auto font-mono text-[10px] text-green-300 space-y-1 bg-gray-900 p-4 rounded-lg">
+          {aiLogs.map((log, i) => (
+            <div key={i}><span className="opacity-40">[{i}]</span> {log}</div>
+          ))}
+          {aiLogs.length === 0 && <div className="text-gray-700 italic">Initializing autonomous analysis...</div>}
+          <div ref={aiLogsEndRef} />
+        </div>
+      </section>
 
       {/* Timeline View */}
       <section className="mb-12 bg-white rounded-xl shadow-md p-6 border-t-4 border-black">
@@ -154,49 +179,17 @@ export default function Dashboard() {
                 <div className="text-xs font-bold uppercase mb-1">{node.type === 'bypass' ? '⚠️ ' : ''}{node.label}</div>
                 <div className="text-[10px] text-gray-500 truncate w-32 font-mono">{node.url}</div>
               </div>
-              {i < flowNodes.length - 1 && (
-                <div className="text-gray-300">→</div>
-              )}
+              {i < flowNodes.length - 1 && <div className="text-gray-300">→</div>}
             </React.Fragment>
           ))}
-          {flowNodes.length === 0 && <div className="text-gray-400 italic">Navigate to generate flow data...</div>}
-        </div>
-      </section>
-
-      {/* Vulnerability Assessment Section */}
-      <section className="mb-12 bg-white rounded-xl shadow-md p-6 border-l-8 border-red-500">
-        <h2 className="text-xl font-bold mb-6 flex items-center text-gray-800">
-          🛡️ Vulnerability Assessment <span className="ml-3 text-xs font-normal bg-red-100 text-red-700 px-2 py-1 rounded">Security Scan Active</span>
-        </h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {alerts.map((alert) => (
-            <div key={alert.id} className="border border-gray-100 bg-gray-50 p-4 rounded-lg">
-              <div className="flex justify-between items-start mb-2">
-                <h3 className="font-bold text-sm text-gray-900">{alert.title}</h3>
-                <span className={`text-[10px] px-2 py-0.5 rounded font-black uppercase ${
-                  alert.severity === 'High' ? 'bg-red-200 text-red-800' :
-                  alert.severity === 'Medium' ? 'bg-yellow-200 text-yellow-800' : 'bg-blue-200 text-blue-800'
-                }`}>{alert.severity}</span>
-              </div>
-              <p className="text-xs text-gray-600 mb-3">{alert.description}</p>
-              <div className="text-[10px] bg-white p-2 rounded border border-gray-200 italic">
-                <span className="font-bold not-italic">Fix:</span> {alert.recommendation}
-              </div>
-            </div>
-          ))}
-          {alerts.length === 0 && (
-            <div className="col-span-full py-8 text-center text-gray-400 italic text-sm">No security header vulnerabilities detected yet.</div>
-          )}
+          {flowNodes.length === 0 && <div className="text-gray-400 italic text-sm">Navigate to generate flow data...</div>}
         </div>
       </section>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
         {/* Left Column: Traffic Log */}
-        <section className="bg-white rounded-xl shadow-lg p-6 overflow-hidden">
-          <div className="flex justify-between items-center mb-6">
-            <h2 className="text-2xl font-bold text-gray-800">Traffic Log</h2>
-            <span className="bg-green-100 text-green-800 text-xs font-semibold px-2.5 py-0.5 rounded-full uppercase">Monitoring</span>
-          </div>
+        <section className="bg-white rounded-xl shadow-lg p-6">
+          <h2 className="text-2xl font-bold text-gray-800 mb-6">Traffic Log</h2>
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
               <thead>
@@ -208,21 +201,12 @@ export default function Dashboard() {
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {traffic.map((entry) => (
-                  <tr key={entry.id} className="hover:bg-gray-50 transition-colors">
-                    <td className="px-4 py-4 whitespace-nowrap">
-                      <span className={`px-2 py-1 rounded text-xs font-bold uppercase ${entry.method === 'POST' ? 'bg-orange-100 text-orange-800' : 'bg-blue-100 text-blue-800'}`}>
-                        {entry.method}
-                      </span>
-                    </td>
-                    <td className="px-4 py-4 text-sm text-gray-600 truncate max-w-xs font-mono">{entry.url}</td>
-                    <td className="px-4 py-4 text-sm font-semibold text-gray-700">{entry.response_status}</td>
+                  <tr key={entry.id} className="hover:bg-gray-50">
+                    <td className="px-4 py-4"><span className="px-2 py-1 rounded text-[10px] font-bold uppercase bg-blue-100 text-blue-800">{entry.method}</span></td>
+                    <td className="px-4 py-4 text-xs font-mono truncate max-w-xs">{entry.url}</td>
+                    <td className="px-4 py-4 text-xs font-bold">{entry.response_status}</td>
                   </tr>
                 ))}
-                {traffic.length === 0 && (
-                  <tr>
-                    <td colSpan={3} className="px-4 py-10 text-center text-gray-400 italic">Waiting for traffic...</td>
-                  </tr>
-                )}
               </tbody>
             </table>
           </div>
@@ -230,39 +214,43 @@ export default function Dashboard() {
 
         {/* Right Column: AI Insights */}
         <section className="bg-white rounded-xl shadow-lg p-6 border-l-8 border-indigo-600">
-          <div className="flex justify-between items-center mb-6">
-            <h2 className="text-2xl font-bold text-gray-800 tracking-tighter">AI Insights</h2>
-            <span className="bg-indigo-100 text-indigo-800 text-xs font-bold px-3 py-1 rounded-md uppercase">Semantic Memory Active</span>
-          </div>
+          <h2 className="text-2xl font-bold text-gray-800 mb-6">AI Insights</h2>
           <div className="space-y-6">
             {attacks.map((attack) => (
-              <div key={attack.id} className="bg-indigo-50 border border-indigo-100 p-5 rounded-lg shadow-sm transition-all hover:scale-[1.01]">
+              <div key={attack.id} className="bg-indigo-50 border border-indigo-100 p-5 rounded-lg shadow-sm">
                 <div className="flex justify-between items-start mb-3">
                   <h3 className="font-bold text-lg text-indigo-900">{attack.flaw_type}</h3>
-                  <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-tighter ${attack.status === 'approved' ? 'bg-green-600 text-white' : 'bg-orange-400 text-white animate-pulse'}`}>
-                    {attack.status}
-                  </span>
+                  <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase bg-orange-400 text-white tracking-tighter">{attack.status}</span>
                 </div>
-                <p className="text-indigo-800 text-sm leading-relaxed mb-4 font-medium">{attack.description}</p>
-                <div className="bg-black text-white p-3 rounded text-xs font-mono mb-6 overflow-x-auto border-b-2 border-indigo-400">
-                  <span className="text-indigo-400 mr-2">PROPOSED PAYLOAD:</span> {attack.suggested_payload}
+                <p className="text-indigo-800 text-sm mb-4">{attack.description}</p>
+                <div className="bg-black text-white p-3 rounded text-xs font-mono mb-4 border-b-2 border-indigo-400 overflow-x-auto">
+                  {attack.suggested_payload}
                 </div>
                 {attack.status === 'pending' && (
-                  <button
-                    onClick={() => approveAndExecute(attack.id)}
-                    className="w-full bg-indigo-600 text-white font-black py-4 rounded hover:bg-indigo-700 shadow-xl transition-all active:translate-y-1 uppercase tracking-widest text-xs"
-                  >
-                    Approve & Execute Attack
+                  <button onClick={() => approveAndExecute(attack.id)} className="w-full bg-indigo-600 text-white font-black py-4 rounded hover:bg-indigo-700 uppercase tracking-widest text-xs">
+                    Approve & Execute
                   </button>
                 )}
               </div>
             ))}
-            {attacks.length === 0 && (
-              <div className="text-gray-400 border-2 border-dotted border-gray-300 py-16 rounded-lg text-center font-bold italic">No logical vulnerabilities detected. Sentery is listening.</div>
-            )}
+            {attacks.length === 0 && <div className="text-gray-400 text-center py-10 italic font-bold">No vulnerabilities detected.</div>}
           </div>
         </section>
       </div>
+
+      {/* VA Alerts */}
+      <section className="mt-12 bg-white rounded-xl shadow-md p-6 border-l-8 border-red-500">
+        <h2 className="text-xl font-bold mb-6">🛡️ Vulnerability Assessment</h2>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {alerts.map((alert) => (
+            <div key={alert.id} className="border border-gray-100 bg-gray-50 p-4 rounded-lg">
+              <h3 className="font-bold text-sm mb-1">{alert.title}</h3>
+              <p className="text-[10px] text-gray-600 mb-2">{alert.description}</p>
+              <div className="text-[10px] bg-white p-2 rounded border italic">Fix: {alert.recommendation}</div>
+            </div>
+          ))}
+        </div>
+      </section>
     </div>
   );
 }

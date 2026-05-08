@@ -11,10 +11,10 @@ import (
 	"log"
 	"net"
 	"net/http"
-	"time"
 	"os"
 	"strings"
 	"sync"
+	"time"
 )
 
 type Proxy struct {
@@ -31,6 +31,18 @@ type TrafficData struct {
 	RequestBody      string              `json:"request_body"`
 	ResponseStatus   int                 `json:"response_status"`
 	ResponseBodySize int                 `json:"response_body_size"`
+}
+
+type MutationInstructions struct {
+	Method  string              `json:"method"`
+	URL     string              `json:"url"`
+	Headers map[string][]string `json:"headers"`
+	Body    string              `json:"body"`
+}
+
+type OrchestratorResponse struct {
+	Status               string                `json:"status"`
+	MutationInstructions *MutationInstructions `json:"mutation_instructions"`
 }
 
 func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -182,8 +194,59 @@ func (p *Proxy) sendToOrchestrator(data TrafficData) {
 	}
 	resp, err := http.Post(url, "application/json", bytes.NewBuffer(jsonData))
 	if err == nil {
-		resp.Body.Close()
+		defer resp.Body.Close()
+		var orchResp OrchestratorResponse
+		if err := json.NewDecoder(resp.Body).Decode(&orchResp); err == nil {
+			if orchResp.MutationInstructions != nil {
+				go p.executeMutation(*orchResp.MutationInstructions)
+			}
+		}
 	}
+}
+
+func (p *Proxy) executeMutation(instr MutationInstructions) {
+	log.Printf("AUTONOMOUS WORKER: Executing mutation on %s", instr.URL)
+
+	req, err := http.NewRequest(instr.Method, instr.URL, strings.NewReader(instr.Body))
+	if err != nil {
+		return
+	}
+
+	for key, values := range instr.Headers {
+		for _, v := range values {
+			req.Header.Add(key, v)
+		}
+	}
+
+	client := &http.Client{
+		Timeout: 10 * time.Second,
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Printf("Mutation error: %v", err)
+		return
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	log.Printf("MUTATION RESULT: Status %d, Size %d", resp.StatusCode, len(body))
+
+	// Send results back to Orchestrator (Feedback Loop)
+	mutationResult := TrafficData{
+		Method:           instr.Method,
+		URL:              instr.URL + " [MUTATED]",
+		Headers:          instr.Headers,
+		RequestBody:      instr.Body,
+		ResponseStatus:   resp.StatusCode,
+		ResponseBodySize: len(body),
+	}
+
+	jsonData, _ := json.Marshal(mutationResult)
+	url := os.Getenv("ORCHESTRATOR_URL")
+	if url == "" {
+		url = "http://localhost:8000/traffic"
+	}
+	http.Post(url, "application/json", bytes.NewBuffer(jsonData))
 }
 
 func (p *Proxy) getCert(host string) (*tls.Certificate, error) {
