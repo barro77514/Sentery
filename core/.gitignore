@@ -1,1 +1,4 @@
 core_bin
+traffic.db
+ca.crt
+ca.key
