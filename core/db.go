@@ -14,9 +14,9 @@ import (
 var db *sql.DB
 var trafficChan chan TrafficData
 
-func InitDB() {
+func InitDB(path string) {
 	var err error
-	db, err = sql.Open("sqlite3", "./traffic.db")
+	db, err = sql.Open("sqlite3", path)
 	if err != nil {
 		log.Fatal(err)
 	}

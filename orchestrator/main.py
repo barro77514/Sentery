@@ -119,7 +119,7 @@ def semantic_lookup(query: str, top_k: int = 3):
 
         # VSS Query
         cursor.execute("""
-            SELECT kb_id, distance
+            SELECT rowid, distance
             FROM vss_kb
             WHERE vss_search(embedding, ?)
             LIMIT ?
@@ -129,7 +129,7 @@ def semantic_lookup(query: str, top_k: int = 3):
 
         kb_entries = []
         for res in vss_results:
-            cursor.execute("SELECT vulnerability_type, payload, fingerprint FROM knowledge_base WHERE id = ?", (res['kb_id'],))
+            cursor.execute("SELECT vulnerability_type, payload, fingerprint FROM knowledge_base WHERE id = ?", (res['rowid'],))
             entry = cursor.fetchone()
             if entry:
                 kb_entries.append(dict(entry))
