@@ -24,11 +24,12 @@ type Proxy struct {
 }
 
 type TrafficData struct {
-	Method           string `json:"method"`
-	URL              string `json:"url"`
-	RequestBody      string `json:"request_body"`
-	ResponseStatus   int    `json:"response_status"`
-	ResponseBodySize int    `json:"response_body_size"`
+	Method           string              `json:"method"`
+	URL              string              `json:"url"`
+	Headers          map[string][]string `json:"headers"`
+	RequestBody      string              `json:"request_body"`
+	ResponseStatus   int                 `json:"response_status"`
+	ResponseBodySize int                 `json:"response_body_size"`
 }
 
 func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -160,12 +161,13 @@ func (p *Proxy) handleHTTP(w http.ResponseWriter, r *http.Request) {
 	data := TrafficData{
 		Method:           r.Method,
 		URL:              urlStr,
+		Headers:          r.Header,
 		RequestBody:      string(body),
 		ResponseStatus:   resp.StatusCode,
 		ResponseBodySize: len(respBody),
 	}
 	p.sendToOrchestrator(data)
-	SaveTraffic(data)
+	SaveTrafficAsync(data)
 }
 
 func (p *Proxy) sendToOrchestrator(data TrafficData) {
@@ -173,7 +175,11 @@ func (p *Proxy) sendToOrchestrator(data TrafficData) {
 	if err != nil {
 		return
 	}
-	resp, err := http.Post("http://localhost:8000/traffic", "application/json", bytes.NewBuffer(jsonData))
+	url := os.Getenv("ORCHESTRATOR_URL")
+	if url == "" {
+		url = "http://localhost:8000/traffic"
+	}
+	resp, err := http.Post(url, "application/json", bytes.NewBuffer(jsonData))
 	if err == nil {
 		resp.Body.Close()
 	}

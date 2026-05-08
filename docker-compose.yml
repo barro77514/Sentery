@@ -1,0 +1,29 @@
+services:
+  core:
+    build: ./core
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./core/traffic.db:/root/traffic.db
+    environment:
+      - ORCHESTRATOR_URL=http://orchestrator:8000/traffic
+
+  orchestrator:
+    build: ./orchestrator
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./core/traffic.db:/app/traffic.db
+    environment:
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+    depends_on:
+      - core
+
+  ui:
+    build: ./ui
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+    depends_on:
+      - orchestrator

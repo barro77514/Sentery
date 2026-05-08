@@ -1,0 +1,11 @@
+fastapi
+uvicorn
+pydantic
+langchain
+langchain-google-genai
+langchain-core
+sentence-transformers
+numpy
+beautifulsoup4
+requests
+sqlite-vss
