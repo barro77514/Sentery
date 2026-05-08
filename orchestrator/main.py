@@ -17,7 +17,6 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
 
 from sentence_transformers import SentenceTransformer
-import numpy as np
 from va_scanner import scan_security_headers
 
 app = FastAPI()
