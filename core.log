@@ -1,4 +1,0 @@
-2026/05/08 11:28:51 Starting MITM proxy on :8080
-2026/05/08 11:28:53 Intercepted CONNECT //www.google.com:443
-2026/05/08 11:28:53 Handling CONNECT for www.google.com:443
-signal: terminated

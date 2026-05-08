@@ -4,9 +4,12 @@ from typing import List, Optional
 import uuid
 import datetime
 import os
-import google.generativeai as genai
 import json
 from fastapi.middleware.cors import CORSMiddleware
+
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.output_parsers import JsonOutputParser
 
 app = FastAPI()
 
@@ -18,13 +21,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Configure Gemini
+# Configure Gemini with LangChain
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 if GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
-    model = genai.GenerativeModel('gemini-pro')
+    llm = ChatGoogleGenerativeAI(model="gemini-pro", google_api_key=GEMINI_API_KEY)
 else:
-    model = None
+    llm = None
 
 class TrafficEntry(BaseModel):
     id: str
@@ -46,59 +48,73 @@ class AttackSuggestion(BaseModel):
 traffic_log: List[TrafficEntry] = []
 attack_suggestions: List[AttackSuggestion] = []
 
+parser = JsonOutputParser(pydantic_object=AttackSuggestion)
+
+prompt_template = ChatPromptTemplate.from_template(
+    """
+    You are an expert in Business Logic Flaws for E-commerce and Ticketing systems.
+    Analyze the following HTTP request.
+
+    Method: {method}
+    URL: {url}
+    Request Body: {body}
+
+    Determine if this request is related to a shopping cart (cart), checkout process, or ticketing system (e.g., Trenord, Airline, etc.).
+    If it is, identify sensitive parameters such as 'price', 'quantity', 'user_id', 'amount', etc.
+
+    If you find a potential business logic flaw (like price manipulation, quantity tampering, IDOR), propose a specific attack.
+    Example attack: "Negative Price Injection" if 'price' is found.
+
+    Your response must be a JSON object with the following fields:
+    - flaw_type: A short name for the flaw (e.g., "Price Manipulation")
+    - description: A clear explanation of what to test.
+    - suggested_payload: A specific payload or modification to try.
+
+    If the request is not sensitive or no flaw is found, return the string "NONE".
+
+    {format_instructions}
+    """
+)
+
 async def analyze_traffic(entry: TrafficEntry):
-    if not model:
-        # Fallback to mock reasoning
-        if "checkout" in entry.url or "cart" in entry.url:
+    if not llm:
+        # Fallback to mock reasoning if no LLM
+        if any(keyword in entry.url.lower() for keyword in ["cart", "checkout", "ticket", "trenord"]):
             suggestion = AttackSuggestion(
                 id=str(uuid.uuid4()),
                 traffic_id=entry.id,
                 flaw_type="Price Manipulation",
-                description="[MOCK] Detected potential checkout process. Attempting to modify item prices.",
-                suggested_payload="Change price parameter to 0.01",
+                description="[MOCK] Detected sensitive context. Attempting to modify numeric parameters.",
+                suggested_payload="Change 'price' or 'amount' to -1 or 0.01",
                 status="pending"
             )
             attack_suggestions.append(suggestion)
         return
 
-    prompt = f"""
-    Analyze the following HTTP traffic for potential business logic flaws, especially in e-commerce or ticketing contexts.
-
-    Method: {entry.method}
-    URL: {entry.url}
-    Request Body: {entry.request_body}
-    Response Status: {entry.response_status}
-
-    If you find a potential flaw, respond with a JSON object containing:
-    "flaw_type": short name of the flaw
-    "description": detailed explanation
-    "suggested_payload": a specific payload to test the flaw
-
-    If no obvious business logic flaw is found, respond with "NONE".
-    """
+    chain = prompt_template | llm | parser
 
     try:
-        response = model.generate_content(prompt)
-        text = response.text.strip()
-        if text != "NONE":
-            # Basic JSON extraction from response
-            if "```json" in text:
-                text = text.split("```json")[1].split("```")[0].strip()
-            elif "```" in text:
-                text = text.split("```")[1].split("```")[0].strip()
+        response = chain.invoke({
+            "method": entry.method,
+            "url": entry.url,
+            "body": entry.request_body,
+            "format_instructions": parser.get_format_instructions()
+        })
 
-            data = json.loads(text)
+        if response and isinstance(response, dict):
             suggestion = AttackSuggestion(
                 id=str(uuid.uuid4()),
                 traffic_id=entry.id,
-                flaw_type=data.get("flaw_type", "Unknown"),
-                description=data.get("description", ""),
-                suggested_payload=data.get("suggested_payload", ""),
+                flaw_type=response.get("flaw_type", "Unknown"),
+                description=response.get("description", ""),
+                suggested_payload=response.get("suggested_payload", ""),
                 status="pending"
             )
             attack_suggestions.append(suggestion)
     except Exception as e:
         print(f"Error during AI analysis: {e}")
+        # If it fails to parse as JSON, it might have returned "NONE"
+        pass
 
 @app.post("/traffic")
 async def ingest_traffic(request: Request):
@@ -131,7 +147,6 @@ async def approve_attack(attack_id: str):
     for attack in attack_suggestions:
         if attack.id == attack_id:
             attack.status = "approved"
-            # Here you would trigger the actual attack via the Core Engine
             return {"status": "approved"}
     return {"status": "not_found"}, 404
 
