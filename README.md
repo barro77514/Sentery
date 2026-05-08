@@ -7,6 +7,7 @@
 ## 🚀 Key Features
 
 - **⚡ High-Performance MITM Proxy (Go)**: Transparent HTTP/HTTPS interception with dynamic certificate generation and asynchronous SQLite persistence.
+- **🛡️ Vulnerability Assessment (VA)**: Automatically scans security headers (CSP, HSTS, etc.) and identifies systematic misconfigurations.
 - **🧠 Semantic Memory (Python/LangChain)**: Uses `sqlite-vss` (Vector Semantic Search) to remember successful attack patterns and suggest them for similar traffic structures.
 - **🛒 E-commerce Intelligence**: Automatically crawls product pages to detect price discrepancies and suggests "Parameter Pollution" attacks.
 - **📈 User Flow Timeline**: Visualizes the user's path through the application and highlights potential logical bypasses (e.g., skipping payment).

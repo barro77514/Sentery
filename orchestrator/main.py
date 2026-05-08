@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, HTTPException
 from pydantic import BaseModel
 from typing import List, Optional
 import uuid
@@ -84,11 +84,15 @@ def extract_price_from_url(url: str) -> Optional[float]:
                 return None
             soup = BeautifulSoup(response.text, 'html.parser')
 
-        # More robust price extraction: check all text nodes
+        # More robust price extraction: check all text nodes (handles $ and €)
         for text in soup.stripped_strings:
-            match = re.search(r'\$\s?(\d+\.?\d*)', text)
+            match = re.search(r'[\$€]\s?(\d+[\.,]?\d*)', text)
             if match:
-                return float(match.group(1))
+                price_str = match.group(1).replace(',', '.')
+                try:
+                    return float(price_str)
+                except ValueError:
+                    continue
     except Exception as e:
         print(f"Error crawling {url}: {e}")
     return None
@@ -347,7 +351,8 @@ async def approve_attack(attack_id: str):
                 print(f"Error saving to VSS KB: {e}")
 
             return {"status": "approved"}
-    return {"status": "not_found"}, 404
+
+    raise HTTPException(status_code=404, detail="Attack suggestion not found")
 
 if __name__ == "__main__":
     import uvicorn
