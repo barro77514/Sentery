@@ -4,8 +4,9 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - ./core/traffic.db:/root/traffic.db
+      - ./core:/root/data
     environment:
+      - DATABASE_PATH=/root/data/traffic.db
       - ORCHESTRATOR_URL=http://orchestrator:8000/traffic
 
   orchestrator:
@@ -13,8 +14,9 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - ./core/traffic.db:/app/traffic.db
+      - ./core:/app/data
     environment:
+      - DATABASE_PATH=/app/data/traffic.db
       - GEMINI_API_KEY=${GEMINI_API_KEY}
     depends_on:
       - core

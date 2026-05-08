@@ -193,6 +193,9 @@ func (p *Proxy) getCert(host string) (*tls.Certificate, error) {
 		return cert, nil
 	}
 
+	// Wait for a new second to ensure unique serial number based on Unix()
+	time.Sleep(1 * time.Millisecond)
+
 	der, priv, err := GenerateCert(host, p.caCert, p.caKey.(*rsa.PrivateKey))
 	if err != nil {
 		return nil, err
@@ -207,7 +210,11 @@ func (p *Proxy) getCert(host string) (*tls.Certificate, error) {
 }
 
 func main() {
-	InitDB()
+	dbPath := os.Getenv("DATABASE_PATH")
+	if dbPath == "" {
+		dbPath = "./traffic.db"
+	}
+	InitDB(dbPath)
 
 	caCertFile := "ca.crt"
 	caKeyFile := "ca.key"

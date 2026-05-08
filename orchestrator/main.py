@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, HTTPException
 from pydantic import BaseModel
 from typing import List, Optional
 import uuid
@@ -18,6 +18,7 @@ from langchain_core.output_parsers import JsonOutputParser
 
 from sentence_transformers import SentenceTransformer
 import numpy as np
+from va_scanner import scan_security_headers
 
 app = FastAPI()
 
@@ -57,8 +58,17 @@ class AttackSuggestion(BaseModel):
     suggested_payload: str
     status: str  # pending, approved, rejected
 
+class VAAlertModel(BaseModel):
+    id: str
+    traffic_id: str
+    title: str
+    severity: str
+    description: str
+    recommendation: str
+
 traffic_log: List[TrafficEntry] = []
 attack_suggestions: List[AttackSuggestion] = []
+va_alerts: List[VAAlertModel] = []
 
 parser = JsonOutputParser(pydantic_object=AttackSuggestion)
 
@@ -74,11 +84,15 @@ def extract_price_from_url(url: str) -> Optional[float]:
                 return None
             soup = BeautifulSoup(response.text, 'html.parser')
 
-        # More robust price extraction: check all text nodes
+        # More robust price extraction: check all text nodes (handles $ and €)
         for text in soup.stripped_strings:
-            match = re.search(r'\$\s?(\d+\.?\d*)', text)
+            match = re.search(r'[\$€]\s?(\d+[\.,]?\d*)', text)
             if match:
-                return float(match.group(1))
+                price_str = match.group(1).replace(',', '.')
+                try:
+                    return float(price_str)
+                except ValueError:
+                    continue
     except Exception as e:
         print(f"Error crawling {url}: {e}")
     return None
@@ -91,20 +105,28 @@ def get_db_connection():
         db_path = "../core/traffic.db"
 
     conn = sqlite3.connect(db_path)
-    conn.enable_load_extension(True)
-    sqlite_vss.load(conn)
+    try:
+        conn.enable_load_extension(True)
+        sqlite_vss.load(conn)
+    except Exception as e:
+        print(f"Warning: Could not load sqlite-vss: {e}")
+
     conn.row_factory = sqlite3.Row
     return conn
 
 def init_vss():
     conn = get_db_connection()
     cursor = conn.cursor()
-    # Create a virtual table for VSS
-    cursor.execute("CREATE VIRTUAL TABLE IF NOT EXISTS vss_kb USING vss0(embedding(384))")
-    # Mapping table to link VSS rowid to KB entry
-    cursor.execute("CREATE TABLE IF NOT EXISTS kb_vss_map (rowid INTEGER PRIMARY KEY, kb_id INTEGER)")
-    conn.commit()
-    conn.close()
+    try:
+        # Create a virtual table for VSS
+        cursor.execute("CREATE VIRTUAL TABLE IF NOT EXISTS vss_kb USING vss0(embedding(384))")
+        # Mapping table to link VSS rowid to KB entry
+        cursor.execute("CREATE TABLE IF NOT EXISTS kb_vss_map (rowid INTEGER PRIMARY KEY, kb_id INTEGER)")
+        conn.commit()
+    except Exception as e:
+        print(f"Warning: Could not initialize VSS tables: {e}")
+    finally:
+        conn.close()
 
 init_vss()
 
@@ -119,7 +141,7 @@ def semantic_lookup(query: str, top_k: int = 3):
 
         # VSS Query
         cursor.execute("""
-            SELECT kb_id, distance
+            SELECT rowid, distance
             FROM vss_kb
             WHERE vss_search(embedding, ?)
             LIMIT ?
@@ -129,7 +151,7 @@ def semantic_lookup(query: str, top_k: int = 3):
 
         kb_entries = []
         for res in vss_results:
-            cursor.execute("SELECT vulnerability_type, payload, fingerprint FROM knowledge_base WHERE id = ?", (res['kb_id'],))
+            cursor.execute("SELECT vulnerability_type, payload, fingerprint FROM knowledge_base WHERE id = ?", (res['rowid'],))
             entry = cursor.fetchone()
             if entry:
                 kb_entries.append(dict(entry))
@@ -268,6 +290,19 @@ async def ingest_traffic(request: Request):
     )
     traffic_log.append(entry)
 
+    # Security Header Scan (VA)
+    if entry.headers:
+        alerts = scan_security_headers(entry.headers)
+        for a in alerts:
+            va_alerts.append(VAAlertModel(
+                id=a.id,
+                traffic_id=entry.id,
+                title=a.title,
+                severity=a.severity,
+                description=a.description,
+                recommendation=a.recommendation
+            ))
+
     await analyze_traffic(entry)
 
     return {"status": "ok", "entry_id": entry.id}
@@ -279,6 +314,10 @@ async def get_traffic():
 @app.get("/attacks")
 async def get_attacks():
     return attack_suggestions
+
+@app.get("/va/alerts")
+async def get_va_alerts():
+    return va_alerts
 
 @app.post("/attacks/{attack_id}/approve")
 async def approve_attack(attack_id: str):
@@ -312,7 +351,8 @@ async def approve_attack(attack_id: str):
                 print(f"Error saving to VSS KB: {e}")
 
             return {"status": "approved"}
-    return {"status": "not_found"}, 404
+
+    raise HTTPException(status_code=404, detail="Attack suggestion not found")
 
 if __name__ == "__main__":
     import uvicorn
