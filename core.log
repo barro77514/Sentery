@@ -1,0 +1,10 @@
+2026/05/08 10:58:05 Starting proxy on :8080
+2026/05/08 10:58:06 Intercepted GET http://www.google.com/checkout
+2026/05/08 10:58:06 Request Body:
+2026/05/08 10:58:06 Response Status: 404
+2026/05/08 10:58:06 Response Body size: 1569
+2026/05/08 10:58:54 Intercepted POST http://shop.com/api/v1/cart/add
+2026/05/08 10:58:54 Request Body: {"item_id": 123, "quantity": 1, "price": 50}
+2026/05/08 10:58:55 Response Status: 403
+2026/05/08 10:58:55 Response Body size: 7409
+signal: terminated

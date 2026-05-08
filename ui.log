@@ -1,0 +1,49 @@
+
+> ui@0.1.0 dev
+> next dev
+
+⚠ Port 3000 is in use by an unknown process, using available port 3001 instead.
+▲ Next.js 16.2.6 (Turbopack)
+- Local:         h HEAD / 200 in 540ms (next.js: 317ms, application-code: 224ms)
+ GET / 200 in 82ms (next.js: 7ms, application-code: 75ms)
+[browser] Failed to fetch traffic TypeError: Failed to fetch
+    at fetchTraffic (src/app/page.tsx:29:25)
+    at Dashboard.useEffect (src/app/page.tsx:57:5)
+  27 |   const fetchTraffic = async () => {
+  28 |     try {
+> 29 |       const res = await fetch('http://localhost:8000/traffic');
+     |                         ^
+  30 |       const data = await res.json();
+  31 |       setTraffic(data);
+  32 |     } catch (err) { (src/app/page.tsx:33:15)
+[browser] Failed to fetch attacks TypeError: Failed to fetch
+    at fetchAttacks (src/app/page.tsx:39:25)
+    at Dashboard.useEffect (src/app/page.tsx:58:5)
+  37 |   const fetchAttacks = async () => {
+  38 |     try {
+> 39 |       const res = await fetch('http://localhost:8000/attacks');
+     |                         ^
+  40 |       const data = await res.json();
+  41 |       setAttacks(data);
+  42 |     } catch (err) { (src/app/page.tsx:43:15)
+[browser] Failed to fetch traffic TypeError: Failed to fetch
+    at fetchTraffic (src/app/page.tsx:29:25)
+    at Dashboard.useEffect.interval (src/app/page.tsx:60:7)
+  27 |   const fetchTraffic = async () => {
+  28 |     try {
+> 29 |       const res = await fetch('http://localhost:8000/traffic');
+     |                         ^
+  30 |       const data = await res.json();
+  31 |       setTraffic(data);
+  32 |     } catch (err) { (src/app/page.tsx:33:15)
+[browser] Failed to fetch attacks TypeError: Failed to fetch
+    at fetchAttacks (src/app/page.tsx:39:25)
+    at Dashboard.useEffect.interval (src/app/page.tsx:61:7)
+  37 |   const fetchAttacks = async () => {
+  38 |     try {
+> 39 |       const res = await fetch('http://localhost:8000/attacks');
+     |                         ^
+  40 |       const data = await res.json();
+  41 |       setAttacks(data);
+  42 |     } catch (err) { (src/app/page.tsx:43:15)
+ GET / 200 in 70ms (next.js: 5ms, application-code: 66ms)
