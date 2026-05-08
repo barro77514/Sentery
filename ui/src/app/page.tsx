@@ -20,13 +20,25 @@ interface AttackSuggestion {
   status: string;
 }
 
+interface VAAlert {
+  id: string;
+  traffic_id: string;
+  title: string;
+  severity: string;
+  description: string;
+  recommendation: string;
+}
+
 export default function Dashboard() {
   const [traffic, setTraffic] = useState<TrafficEntry[]>([]);
   const [attacks, setAttacks] = useState<AttackSuggestion[]>([]);
+  const [alerts, setAlerts] = useState<VAAlert[]>([]);
+
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
   const fetchTraffic = async () => {
     try {
-      const res = await fetch('http://localhost:8000/traffic');
+      const res = await fetch(`${API_URL}/traffic`);
       if (!res.ok) throw new Error('Network response was not ok');
       const data = await res.json();
       setTraffic(data);
@@ -37,7 +49,7 @@ export default function Dashboard() {
 
   const fetchAttacks = async () => {
     try {
-      const res = await fetch('http://localhost:8000/attacks');
+      const res = await fetch(`${API_URL}/attacks`);
       if (!res.ok) throw new Error('Network response was not ok');
       const data = await res.json();
       setAttacks(data);
@@ -46,9 +58,20 @@ export default function Dashboard() {
     }
   };
 
+  const fetchVAAlerts = async () => {
+    try {
+      const res = await fetch(`${API_URL}/va/alerts`);
+      if (!res.ok) throw new Error('Network response was not ok');
+      const data = await res.json();
+      setAlerts(data);
+    } catch (err) {
+      console.error("Failed to fetch VA alerts", err);
+    }
+  };
+
   const approveAndExecute = async (id: string) => {
     try {
-      const res = await fetch(`http://localhost:8000/attacks/${id}/approve`, { method: 'POST' });
+      const res = await fetch(`${API_URL}/attacks/${id}/approve`, { method: 'POST' });
       if (res.ok) {
         fetchAttacks();
         alert("Attack approved and executed (Knowledge Base updated)!");
@@ -61,9 +84,11 @@ export default function Dashboard() {
   useEffect(() => {
     fetchTraffic();
     fetchAttacks();
+    fetchVAAlerts();
     const interval = setInterval(() => {
       fetchTraffic();
       fetchAttacks();
+      fetchVAAlerts();
     }, 5000);
     return () => clearInterval(interval);
   }, []);
@@ -135,6 +160,33 @@ export default function Dashboard() {
             </React.Fragment>
           ))}
           {flowNodes.length === 0 && <div className="text-gray-400 italic">Navigate to generate flow data...</div>}
+        </div>
+      </section>
+
+      {/* Vulnerability Assessment Section */}
+      <section className="mb-12 bg-white rounded-xl shadow-md p-6 border-l-8 border-red-500">
+        <h2 className="text-xl font-bold mb-6 flex items-center text-gray-800">
+          🛡️ Vulnerability Assessment <span className="ml-3 text-xs font-normal bg-red-100 text-red-700 px-2 py-1 rounded">Security Scan Active</span>
+        </h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {alerts.map((alert) => (
+            <div key={alert.id} className="border border-gray-100 bg-gray-50 p-4 rounded-lg">
+              <div className="flex justify-between items-start mb-2">
+                <h3 className="font-bold text-sm text-gray-900">{alert.title}</h3>
+                <span className={`text-[10px] px-2 py-0.5 rounded font-black uppercase ${
+                  alert.severity === 'High' ? 'bg-red-200 text-red-800' :
+                  alert.severity === 'Medium' ? 'bg-yellow-200 text-yellow-800' : 'bg-blue-200 text-blue-800'
+                }`}>{alert.severity}</span>
+              </div>
+              <p className="text-xs text-gray-600 mb-3">{alert.description}</p>
+              <div className="text-[10px] bg-white p-2 rounded border border-gray-200 italic">
+                <span className="font-bold not-italic">Fix:</span> {alert.recommendation}
+              </div>
+            </div>
+          ))}
+          {alerts.length === 0 && (
+            <div className="col-span-full py-8 text-center text-gray-400 italic text-sm">No security header vulnerabilities detected yet.</div>
+          )}
         </div>
       </section>
 

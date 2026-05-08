@@ -18,6 +18,7 @@ from langchain_core.output_parsers import JsonOutputParser
 
 from sentence_transformers import SentenceTransformer
 import numpy as np
+from va_scanner import scan_security_headers
 
 app = FastAPI()
 
@@ -57,8 +58,17 @@ class AttackSuggestion(BaseModel):
     suggested_payload: str
     status: str  # pending, approved, rejected
 
+class VAAlertModel(BaseModel):
+    id: str
+    traffic_id: str
+    title: str
+    severity: str
+    description: str
+    recommendation: str
+
 traffic_log: List[TrafficEntry] = []
 attack_suggestions: List[AttackSuggestion] = []
+va_alerts: List[VAAlertModel] = []
 
 parser = JsonOutputParser(pydantic_object=AttackSuggestion)
 
@@ -91,20 +101,28 @@ def get_db_connection():
         db_path = "../core/traffic.db"
 
     conn = sqlite3.connect(db_path)
-    conn.enable_load_extension(True)
-    sqlite_vss.load(conn)
+    try:
+        conn.enable_load_extension(True)
+        sqlite_vss.load(conn)
+    except Exception as e:
+        print(f"Warning: Could not load sqlite-vss: {e}")
+
     conn.row_factory = sqlite3.Row
     return conn
 
 def init_vss():
     conn = get_db_connection()
     cursor = conn.cursor()
-    # Create a virtual table for VSS
-    cursor.execute("CREATE VIRTUAL TABLE IF NOT EXISTS vss_kb USING vss0(embedding(384))")
-    # Mapping table to link VSS rowid to KB entry
-    cursor.execute("CREATE TABLE IF NOT EXISTS kb_vss_map (rowid INTEGER PRIMARY KEY, kb_id INTEGER)")
-    conn.commit()
-    conn.close()
+    try:
+        # Create a virtual table for VSS
+        cursor.execute("CREATE VIRTUAL TABLE IF NOT EXISTS vss_kb USING vss0(embedding(384))")
+        # Mapping table to link VSS rowid to KB entry
+        cursor.execute("CREATE TABLE IF NOT EXISTS kb_vss_map (rowid INTEGER PRIMARY KEY, kb_id INTEGER)")
+        conn.commit()
+    except Exception as e:
+        print(f"Warning: Could not initialize VSS tables: {e}")
+    finally:
+        conn.close()
 
 init_vss()
 
@@ -268,6 +286,19 @@ async def ingest_traffic(request: Request):
     )
     traffic_log.append(entry)
 
+    # Security Header Scan (VA)
+    if entry.headers:
+        alerts = scan_security_headers(entry.headers)
+        for a in alerts:
+            va_alerts.append(VAAlertModel(
+                id=a.id,
+                traffic_id=entry.id,
+                title=a.title,
+                severity=a.severity,
+                description=a.description,
+                recommendation=a.recommendation
+            ))
+
     await analyze_traffic(entry)
 
     return {"status": "ok", "entry_id": entry.id}
@@ -279,6 +310,10 @@ async def get_traffic():
 @app.get("/attacks")
 async def get_attacks():
     return attack_suggestions
+
+@app.get("/va/alerts")
+async def get_va_alerts():
+    return va_alerts
 
 @app.post("/attacks/{attack_id}/approve")
 async def approve_attack(attack_id: str):
